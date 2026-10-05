@@ -1,4 +1,4 @@
-"""เชฟกอร์ดอน — Thai cooking assistant chatbot with RAG.
+"""Gordon Ramsay (AI) — Thai cooking assistant chatbot with RAG.
 
 Pipeline: Load docs (data/*.md + uploads) → Clean → Chunk → Embed (Gemini sentence embedding)
 → FAISS index → Retrieve top-k per question → Grounded prompt → Gemini LLM answers with citations.
@@ -20,7 +20,7 @@ except ImportError:  # numpy fallback gives identical results for a flat inner-p
 
 NOT_FOUND = "ไม่พบข้อมูล"
 
-SYSTEM_PROMPT = f"""คุณคือ "เชฟกอร์ดอน" ตัวละคร AI ผู้ช่วยตอบคำถามเรื่องการทำอาหารไทย ที่ได้แรงบันดาลใจจากสไตล์ของ Gordon Ramsay (ไม่ใช่ตัวจริง)
+SYSTEM_PROMPT = f"""คุณคือ "Gordon Ramsay (AI)" ตัวละคร AI ผู้ช่วยตอบคำถามเรื่องการทำอาหารไทย ที่ได้แรงบันดาลใจจากสไตล์ของ Gordon Ramsay (ไม่ใช่ตัวจริง)
 บุคลิก: พูดตรง กระชับ มีพลัง ใส่ใจรายละเอียด ใช้คำติดปากอย่าง "Beautiful!", "Yes, chef!", "Stunning!" ได้บ้าง แต่สุภาพและให้กำลังใจผู้ใช้เสมอ ห้ามดูถูกหรือด่าผู้ใช้
 ตอบจากเอกสารอ้างอิง (Context) ที่ได้รับเท่านั้น
 กติกา:
@@ -254,7 +254,7 @@ def show_sources(hits):
             st.caption(h["text"][:500] + ("…" if len(h["text"]) > 500 else ""))
 
 
-st.set_page_config(page_title="เชฟกอร์ดอน — ผู้ช่วยทำอาหารไทย", page_icon="🍳", layout="centered")
+st.set_page_config(page_title="Gordon Ramsay (AI) — ผู้ช่วยทำอาหารไทย", page_icon="🍳", layout="centered")
 st.markdown(CSS, unsafe_allow_html=True)
 
 if not API_KEY:
@@ -268,7 +268,7 @@ if "messages" not in st.session_state:
 ask = None  # question picked from a button instead of typed
 
 with st.sidebar:
-    st.markdown("## 🍳 เชฟกอร์ดอน")
+    st.markdown("## 🍳 Gordon Ramsay (AI)")
     st.caption("ผู้ช่วยทำอาหารไทย · ตอบจากคลังสูตรอาหารด้วย RAG")
     st.caption("ℹ️ ตัวละคร AI ที่ได้แรงบันดาลใจจาก Gordon Ramsay — ไม่ใช่ตัวจริงและไม่มีส่วนเกี่ยวข้อง")
     if st.button("➕ เริ่มแชทใหม่", use_container_width=True, type="primary"):
@@ -321,7 +321,7 @@ if not st.session_state.messages:
     st.markdown(
         """
 <div class="hero"><div class="emoji">👨‍🍳</div><div>
-<h2>Yes, chef! ผม "เชฟกอร์ดอน" 🔥</h2>
+<h2>Yes, chef! I'm Gordon Ramsay (AI) 🔥</h2>
 <p>ถามเรื่องสูตรอาหารไทย วิธีทำ ของทดแทน หรือความปลอดภัยอาหาร — ผมตอบจากคลังสูตรที่คัดไว้ พร้อมบอกแหล่งอ้างอิงทุกครั้ง</p>
 </div></div>
 <div class="steps">
