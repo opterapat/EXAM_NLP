@@ -1,2 +1,4 @@
 streamlit>=1.40
 requests
+numpy
+faiss-cpu; python_version < "3.14"
