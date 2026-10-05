@@ -37,17 +37,12 @@ RAG_TEMPLATE = """Context (เอกสารที่ค้นได้จา�
 
 ตอบโดยอิงจาก Context ข้างบนเท่านั้น พร้อมเลขอ้างอิง [n] ถ้าไม่มีข้อมูลให้ตอบว่า "ไม่พบข้อมูล\""""
 
-SUGGESTIONS = [
-    "สอนทำกะเพราหมูสับไข่ดาว",
-    "มีไข่ มะเขือเทศ หัวหอม ทำอะไรได้บ้าง?",
-    "ไก่ต้องสุกที่อุณหภูมิเท่าไหร่?",
-    "ใช้อะไรแทนน้ำปลาได้บ้าง?",
-]
-
-WELCOME = (
-    "สวัสดีครับ! ผม **เชฟน้อย** 👨‍🍳 ผู้ช่วยทำอาหารไทยที่ตอบจากคลังสูตรอาหาร "
-    "ถามสูตร วิธีทำ ของทดแทน หรือความปลอดภัยอาหารได้เลย — ทุกคำตอบจะมีแหล่งอ้างอิงให้ดูครับ"
-)
+SUGGESTIONS = {
+    "🍲 สูตรอาหาร": ["สอนทำกะเพราหมูสับไข่ดาว", "ต้มยำกุ้งน้ำข้นทำยังไง?"],
+    "🥚 มีอะไรในตู้เย็น": ["มีไข่ มะเขือเทศ หัวหอม ทำอะไรได้บ้าง?", "มีอกไก่ อยากกินคลีนๆ ทำอะไรดี?"],
+    "🔁 ของทดแทน": ["ใช้อะไรแทนน้ำปลาได้บ้าง?", "ไม่มีกะทิ ใช้อะไรแทนได้?"],
+    "🛡️ ความปลอดภัย": ["ไก่ต้องสุกที่อุณหภูมิเท่าไหร่?", "อาหารสุกเก็บในตู้เย็นได้กี่วัน?"],
+}
 
 DATA_DIR = Path(__file__).parent / "data"
 BASE = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -207,62 +202,141 @@ def stream_chat(contents):
 
 # ---------- 6. Chatbot interface ----------
 
+CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap');
+.stApp { font-family: 'Sarabun', sans-serif; }
+.block-container { max-width: 860px; padding-top: 2rem; }
+.hero { display: flex; gap: 16px; align-items: center; padding: 18px 20px; border-radius: 16px;
+        background: linear-gradient(135deg, #FDE6DA, #FFF4EC); border: 1px solid #F3D3C1; margin-bottom: 14px; }
+.hero .emoji { font-size: 46px; line-height: 1; }
+.hero h2 { margin: 0; padding: 0; font-size: 1.45rem; color: #C2410C; }
+.hero p { margin: 4px 0 0; color: #5B4A40; font-size: 0.98rem; }
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 6px 0 18px; }
+.step { background: #fff; border: 1px solid #F0E2D6; border-radius: 12px; padding: 10px 12px; font-size: 0.9rem; color: #5B4A40; }
+.step b { color: #C2410C; display: block; margin-bottom: 2px; }
+.cat { font-weight: 600; color: #5B4A40; margin: 4px 0 2px; font-size: 0.95rem; }
+.src { font-size: 0.85rem; color: #8A7D72; margin-top: 6px; }
+.src span { display: inline-block; background: #FBEFE6; border-radius: 999px; padding: 1px 10px; margin: 2px 4px 2px 0; color: #7C4A2D; }
+@media (max-width: 640px) { .steps { grid-template-columns: 1fr; } .hero .emoji { font-size: 36px; } }
+</style>
+"""
+
+
+def doc_meta(text):
+    title = text.splitlines()[0].lstrip("# ").strip()
+    m = re.search(r"หมวด:\s*([^|\n]+)", text)
+    return title, (m.group(1).strip() if m else "อื่นๆ")
+
+
+def friendly_error(e):
+    msg = str(e)
+    if "429" in msg:
+        return "⏳ ตอนนี้มีการใช้งาน API ถี่เกินไป รอประมาณ 1 นาทีแล้วลองถามใหม่อีกครั้งนะครับ"
+    if any(code in msg for code in ("400", "401", "403")) and "key" in msg.lower():
+        return "🔑 API key ไม่ถูกต้องหรือหมดอายุ — ผู้ดูแลต้องตั้งค่า GEMINI_API_KEY ใหม่ใน Secrets"
+    if isinstance(e, requests.exceptions.RequestException):
+        return "📡 เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ ลองกดถามใหม่อีกครั้งนะครับ"
+    return f"⚠️ เกิดข้อผิดพลาด: {msg[:200]}"
+
+
 def show_sources(hits):
     if not hits:
-        st.caption("📚 แหล่งอ้างอิง: ไม่พบเอกสารที่เกี่ยวข้องเกินเกณฑ์ความคล้าย")
+        st.markdown('<div class="src">📚 ไม่มีเอกสารในคลังที่เกี่ยวข้องกับคำถามนี้</div>', unsafe_allow_html=True)
         return
-    with st.expander(f"📚 แหล่งอ้างอิงที่ใช้ตอบ ({len(hits)} เอกสาร)"):
+    tags = "".join(f"<span>[{n}] {h['title']}</span>" for n, h in enumerate(hits, 1))
+    st.markdown(f'<div class="src">📚 อ้างอิงจาก: {tags}</div>', unsafe_allow_html=True)
+    with st.expander("ดูข้อความในเอกสารอ้างอิง"):
         for n, h in enumerate(hits, 1):
-            st.markdown(f"**[{n}] {h['title']}** · `{h['source']}` · similarity = `{h['score']:.3f}`")
+            st.markdown(f"**[{n}] {h['title']}** · `{h['source']}` · ความคล้าย `{h['score']:.2f}`")
             st.caption(h["text"][:500] + ("…" if len(h["text"]) > 500 else ""))
 
 
-st.set_page_config(page_title="เชฟน้อย — Cooking RAG Chatbot", page_icon="🍳")
+st.set_page_config(page_title="เชฟน้อย — ผู้ช่วยทำอาหารไทย", page_icon="🍳", layout="centered")
+st.markdown(CSS, unsafe_allow_html=True)
 
 if not API_KEY:
-    st.error('ยังไม่ได้ตั้งค่า GEMINI_API_KEY ใน Secrets (Manage app → Settings → Secrets)')
+    st.error("🔑 ยังไม่ได้ตั้งค่า GEMINI_API_KEY — ไปที่ Manage app → Settings → Secrets")
     st.stop()
 
 if "messages" not in st.session_state:
     # user: {"role", "text"}; model: {"role", "text", "sources"}
     st.session_state.messages = []
 
+ask = None  # question picked from a button instead of typed
+
 with st.sidebar:
-    st.title("🍳 เชฟน้อย")
-    st.caption("ผู้ช่วยทำอาหารไทย · RAG Chatbot")
-    top_k = st.slider("จำนวนเอกสารที่ค้น (top-k)", 1, 8, 4)
-    min_score = st.slider("เกณฑ์ความคล้ายขั้นต่ำ", 0.0, 1.0, 0.50, 0.05,
-                          help="chunk ที่คล้ายคำถามน้อยกว่าค่านี้จะไม่ถูกส่งให้ LLM")
-    uploads = st.file_uploader("เพิ่มเอกสาร (.txt / .md)", type=["txt", "md"], accept_multiple_files=True)
-    if st.button("🔄 เริ่มแชทใหม่", use_container_width=True):
+    st.markdown("## 🍳 เชฟน้อย")
+    st.caption("ผู้ช่วยทำอาหารไทย · ตอบจากคลังสูตรอาหารด้วย RAG")
+    if st.button("➕ เริ่มแชทใหม่", use_container_width=True, type="primary"):
         st.session_state.messages = []
         st.rerun()
+
+with st.sidebar:
+    with st.expander("⚙️ ตั้งค่าขั้นสูง"):
+        top_k = st.slider("จำนวนเอกสารที่ค้น (top-k)", 1, 8, 4)
+        min_score = st.slider("เกณฑ์ความคล้ายขั้นต่ำ", 0.0, 1.0, 0.50, 0.05,
+                              help="เอกสารที่คล้ายคำถามน้อยกว่าค่านี้จะไม่ถูกส่งให้ LLM")
+        uploads = st.file_uploader("เพิ่มเอกสารเข้าคลัง (.txt / .md)", type=["txt", "md"],
+                                   accept_multiple_files=True)
 
 docs = load_documents(uploads)
 try:
     chunks, index = build_index(tuple(docs))
 except Exception as e:
-    st.error(f"สร้าง index ไม่สำเร็จ: {e}")
+    st.error(friendly_error(e))
     st.stop()
 
 with st.sidebar:
+    st.markdown("#### 📖 เมนูในคลัง — กดเพื่อดูสูตร")
+    groups = {}
+    for name, text in docs:
+        title, cat = doc_meta(text)
+        groups.setdefault(cat, []).append(title)
+    for cat, titles in groups.items():
+        if cat == "ความรู้ทั่วไป":
+            continue
+        with st.expander(f"{cat} ({len(titles)})"):
+            for t in titles:
+                if st.button(t, key=f"menu-{t}", use_container_width=True):
+                    ask = f"สอนทำ{t}"
+    if "ความรู้ทั่วไป" in groups:
+        with st.expander(f"💡 ความรู้ทั่วไป ({len(groups['ความรู้ทั่วไป'])})"):
+            for t in groups["ความรู้ทั่วไป"]:
+                if st.button(t, key=f"menu-{t}", use_container_width=True):
+                    ask = f"สรุปเรื่อง{t}"
     st.divider()
     c1, c2 = st.columns(2)
     c1.metric("เอกสาร", len(docs))
     c2.metric("Chunks", len(chunks))
     st.caption(
-        f"LLM: `{MODEL}`  \nEmbedding: `{EMBED_MODEL}` ({EMBED_DIM}-d)  \n"
-        "Vector DB: " + ("FAISS IndexFlatIP (cosine)" if faiss else "NumPy cosine")
+        f"LLM `{MODEL}` · Embedding `{EMBED_MODEL}` · "
+        + ("FAISS" if faiss else "NumPy") + " vector search"
     )
-    with st.expander("📂 เอกสารในคลังความรู้"):
-        for name, _ in docs:
-            st.markdown(f"- `{name}`")
 
-st.title("🍳 เชฟน้อย")
-st.caption("แชทบอทผู้ช่วยทำอาหารไทย — ตอบจากคลังสูตรอาหารด้วย RAG พร้อมแสดงแหล่งอ้างอิงทุกคำตอบ")
-
-with st.chat_message("assistant", avatar="👨‍🍳"):
-    st.markdown(WELCOME)
+if not st.session_state.messages:
+    st.markdown(
+        """
+<div class="hero"><div class="emoji">👨‍🍳</div><div>
+<h2>สวัสดีครับ ผม "เชฟน้อย"</h2>
+<p>ถามเรื่องสูตรอาหารไทย วิธีทำ ของทดแทน หรือความปลอดภัยอาหาร — ผมตอบจากคลังสูตรที่คัดไว้ พร้อมบอกแหล่งอ้างอิงทุกครั้ง</p>
+</div></div>
+<div class="steps">
+<div class="step"><b>1. ถาม</b>พิมพ์คำถาม หรือกดคำถามตัวอย่างด้านล่าง</div>
+<div class="step"><b>2. ค้นหา</b>ระบบค้นสูตรที่เกี่ยวข้องจากคลังเอกสาร</div>
+<div class="step"><b>3. ตอบ + อ้างอิง</b>ดูแหล่งที่มาได้ใต้คำตอบ [1] [2]</div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+    st.markdown("**ลองถามแบบนี้ดูครับ 👇**")
+    cols = st.columns(2)
+    for i, (cat, qs) in enumerate(SUGGESTIONS.items()):
+        with cols[i % 2]:
+            st.markdown(f'<div class="cat">{cat}</div>', unsafe_allow_html=True)
+            for q in qs:
+                if st.button(q, key=f"sug-{q}", use_container_width=True):
+                    ask = q
 
 for m in st.session_state.messages:
     role = "user" if m["role"] == "user" else "assistant"
@@ -271,20 +345,15 @@ for m in st.session_state.messages:
         if role == "assistant":
             show_sources(m.get("sources", []))
 
-prompt = st.chat_input("ถามเรื่องอาหาร เช่น 'ต้มยำกุ้งน้ำข้นทำยังไง'")
-
-if not st.session_state.messages and not prompt:
-    cols = st.columns(2)
-    for i, s in enumerate(SUGGESTIONS):
-        if cols[i % 2].button(s, use_container_width=True):
-            prompt = s
+prompt = st.chat_input("พิมพ์คำถามเรื่องอาหาร เช่น “ต้มยำกุ้งใส่มะนาวตอนไหน”") or ask
 
 if prompt:
     with st.chat_message("user", avatar="🧑"):
         st.markdown(prompt)
     with st.chat_message("assistant", avatar="👨‍🍳"):
         try:
-            hits = retrieve(prompt, chunks, index, top_k, min_score)
+            with st.spinner("🔎 กำลังค้นหาสูตรในคลัง..."):
+                hits = retrieve(prompt, chunks, index, top_k, min_score)
             # Earlier turns stay as plain text for conversation memory; only the latest turn carries Context
             contents = [{"role": m["role"], "parts": [{"text": m["text"]}]} for m in st.session_state.messages]
             contents.append({"role": "user", "parts": [{"text": build_prompt(prompt, hits)}]})
@@ -292,6 +361,6 @@ if prompt:
             st.session_state.messages.append({"role": "user", "text": prompt})
             st.session_state.messages.append({"role": "model", "text": reply, "sources": hits})
         except Exception as e:
-            st.error(f"⚠️ {e}")
+            st.error(friendly_error(e))
             st.stop()
     st.rerun()
