@@ -23,8 +23,16 @@ SUGGESTIONS = [
 
 WELCOME = "สวัสดีครับ! ผม **เชฟน้อย** 👨‍🍳 ถามเรื่องสูตรอาหาร วิธีทำ หรือบอกวัตถุดิบที่มีในตู้เย็นมาได้เลยครับ"
 
-API_KEY = st.secrets.get("GEMINI_API_KEY", "")
-MODEL = st.secrets.get("GEMINI_MODEL", "gemini-flash-latest")
+def secret(name, default):
+    # st.secrets raises when no secrets file exists, so fall back to the default
+    try:
+        return st.secrets.get(name, default)
+    except Exception:
+        return default
+
+
+API_KEY = secret("GEMINI_API_KEY", "")
+MODEL = secret("GEMINI_MODEL", "gemini-flash-latest")
 URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:streamGenerateContent?alt=sse"
 
 
