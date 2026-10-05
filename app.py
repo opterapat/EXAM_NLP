@@ -4,6 +4,7 @@ Pipeline: Load docs (data/*.md + uploads) → Clean → Chunk → Embed (Gemini 
 → FAISS index → Retrieve top-k per question → Grounded prompt → Gemini LLM answers with citations.
 """
 
+import base64
 import json
 import re
 import unicodedata
@@ -47,6 +48,8 @@ SUGGESTIONS = {
 }
 
 DATA_DIR = Path(__file__).parent / "data"
+CHEF_IMG = Path(__file__).parent / "assets" / "chef.jpg"
+BOT_AVATAR = str(CHEF_IMG) if CHEF_IMG.exists() else "👨‍🍳"
 BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 EMBED_MODEL = "gemini-embedding-001"
 EMBED_DIM = 768
@@ -212,6 +215,7 @@ CSS = """
 .hero { display: flex; gap: 16px; align-items: center; padding: 18px 20px; border-radius: 16px;
         background: linear-gradient(135deg, #FDE6DA, #FFF4EC); border: 1px solid #F3D3C1; margin-bottom: 14px; }
 .hero .emoji { font-size: 46px; line-height: 1; }
+.hero img { width: 84px; height: 84px; border-radius: 50%; object-fit: cover; border: 3px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.15); flex-shrink: 0; }
 .hero h2 { margin: 0; padding: 0; font-size: 1.45rem; color: #C2410C; }
 .hero p { margin: 4px 0 0; color: #5B4A40; font-size: 0.98rem; }
 .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 6px 0 18px; }
@@ -220,7 +224,7 @@ CSS = """
 .cat { font-weight: 600; color: #5B4A40; margin: 4px 0 2px; font-size: 0.95rem; }
 .src { font-size: 0.85rem; color: #8A7D72; margin-top: 6px; }
 .src span { display: inline-block; background: #FBEFE6; border-radius: 999px; padding: 1px 10px; margin: 2px 4px 2px 0; color: #7C4A2D; }
-@media (max-width: 640px) { .steps { grid-template-columns: 1fr; } .hero .emoji { font-size: 36px; } }
+@media (max-width: 640px) { .steps { grid-template-columns: 1fr; } .hero .emoji { font-size: 36px; } .hero img { width: 64px; height: 64px; } }
 </style>
 """
 
@@ -268,6 +272,8 @@ if "messages" not in st.session_state:
 ask = None  # question picked from a button instead of typed
 
 with st.sidebar:
+    if CHEF_IMG.exists():
+        st.image(str(CHEF_IMG), width=110)
     st.markdown("## 🍳 Gordon Ramsay (AI)")
     st.caption("ผู้ช่วยทำอาหารไทย · ตอบจากคลังสูตรอาหารด้วย RAG")
     st.caption("ℹ️ ตัวละคร AI ที่ได้แรงบันดาลใจจาก Gordon Ramsay — ไม่ใช่ตัวจริงและไม่มีส่วนเกี่ยวข้อง")
@@ -318,9 +324,14 @@ with st.sidebar:
     )
 
 if not st.session_state.messages:
+    if CHEF_IMG.exists():
+        b64 = base64.b64encode(CHEF_IMG.read_bytes()).decode()
+        hero_img = f'<img src="data:image/jpeg;base64,{b64}" alt="Gordon Ramsay (AI)">'
+    else:
+        hero_img = '<div class="emoji">👨‍🍳</div>'
     st.markdown(
-        """
-<div class="hero"><div class="emoji">👨‍🍳</div><div>
+        f"""
+<div class="hero">{hero_img}<div>
 <h2>Yes, chef! I'm Gordon Ramsay (AI) 🔥</h2>
 <p>ถามเรื่องสูตรอาหารไทย วิธีทำ ของทดแทน หรือความปลอดภัยอาหาร — ผมตอบจากคลังสูตรที่คัดไว้ พร้อมบอกแหล่งอ้างอิงทุกครั้ง</p>
 </div></div>
@@ -343,7 +354,7 @@ if not st.session_state.messages:
 
 for m in st.session_state.messages:
     role = "user" if m["role"] == "user" else "assistant"
-    with st.chat_message(role, avatar="🧑" if role == "user" else "👨‍🍳"):
+    with st.chat_message(role, avatar="🧑" if role == "user" else BOT_AVATAR):
         st.markdown(m["text"])
         if role == "assistant":
             show_sources(m.get("sources", []))
@@ -353,7 +364,7 @@ prompt = st.chat_input("พิมพ์คำถามเรื่องอา�
 if prompt:
     with st.chat_message("user", avatar="🧑"):
         st.markdown(prompt)
-    with st.chat_message("assistant", avatar="👨‍🍳"):
+    with st.chat_message("assistant", avatar=BOT_AVATAR):
         try:
             with st.spinner("🔎 กำลังค้นหาสูตรในคลัง..."):
                 hits = retrieve(prompt, chunks, index, top_k, min_score)
